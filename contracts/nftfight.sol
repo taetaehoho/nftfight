@@ -5,12 +5,19 @@ pragma solidity ^0.8.17;
 // participate in a weekly vote to determine which NFT to burn. The final
 // NFT left standing gets to claim all the ETH.
 
-contract MyContract {
-    // Address of the contract owner
-    address public owner;
+import "@openzeppelin/contracts/utils/Counters.sol";
 
-    // The NFTs that have been purchased
-    mapping(address => uint256) public nfts;
+contract MyContract {
+    using Counters for Counters.Counter;
+
+    // NFT Id (should not go above 1000)
+    Counters.Counter public NFTid;
+
+    // Total Number of NFTs to Start
+    uint16 public totalNFTs = 1000;
+
+    // Keeps track of which "NFT" belongs to who
+    mapping(address => Counters.Counter) public purchasedNFTs;
 
     // The total ETH collected from NFT purchases
     uint256 public totalEth;
@@ -31,22 +38,21 @@ contract MyContract {
     uint256 public voteDuration = 86400;
 
     // The constructor, which sets the owner of the contract
-    constructor() public {
-        owner = msg.sender;
-    }
+    constructor() public {}
+
+    error purchaseNFT__MintPriceNotMet();
 
     // Allows a user to purchase an NFT
     function purchaseNft() public payable {
         // Check if the user has sent the minimum amount of ETH
-        require(
-            msg.value >= minEth,
-            "You must send at least 0.05 ETH to purchase an NFT"
-        );
+        if (msg.value < minEth) {
+            revert purchaseNFT__MintPriceNotMet();
+        }
 
-        // Store the NFT ID and the address of the user who purchased it
-        nfts[msg.sender] = nftBurned;
+        purchasedNFTs[msg.sender] = NFTid;
 
-        // Update the total ETH collected
+        NFTid.increment();
+
         totalEth += msg.value;
     }
 
@@ -54,32 +60,26 @@ contract MyContract {
     function vote(uint256 nftId) public {
         // Check if a vote is currently in progress
         require(
-            now - lastVote >= voteDuration,
+            block.timestamp - lastVote >= voteDuration,
             "A vote is already in progress"
         );
 
-        // Check if the user has the NFT they are voting to burn
-        require(
-            nfts[msg.sender] == nftId,
-            "You do not have the NFT you are trying to burn"
-        );
-
         // Store the NFT ID and the address of the user who voted
-        lastNft = nftId;
-        lastVote = now;
+        lastNft = NFTid;
+        lastVote = block.timestamp;
     }
 
     // Burns the NFT that received the most votes
     function burnNft() public {
         // Check if the current vote has expired
         require(
-            now - lastVote < voteDuration,
+            block.timestamp - lastVote < voteDuration,
             "The current vote has not expired"
         );
 
         // Burn the NFT that received the most votes
         nftBurned++;
-        delete nfts[lastNft];
+        delete purchasedNFTs[lastNft];
 
         // Send all the collected ETH to the owner of the last NFT
         lastNft.transfer(totalEth);
