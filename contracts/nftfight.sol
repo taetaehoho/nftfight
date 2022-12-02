@@ -11,19 +11,26 @@ contract MyContract {
     using Counters for Counters.Counter;
 
     // NFT Id (should not go above 1000)
-    Counters.Counter public NFTid;
+    Counters.Counter private NFTid;
 
-    // Total Number of NFTs to Start
-    uint16 public totalNFTs = 1000;
+    // epoch Counter
+    Counters.Counter private epoch;
+
+    // Total Number of NFTs currently available
+    uint16 public totalNFTs;
 
     // Keeps track of which "NFT" belongs to who
-    mapping(address => Counters.Counter) public purchasedNFTs;
+    mapping(uint256 => address) public purchasedNFTs;
+
+    // Keeps track of what NFTs are still existing
+    uint256[] survivingNFTs;
+
+    // !!! not sure if we need uint256 vs smaller
+    // Epoch: (tokenid: vote)
+    mapping(uint256 => mapping(uint256 => uint8)) voteTally;
 
     // The total ETH collected from NFT purchases
     uint256 public totalEth;
-
-    // The number of NFTs that have been burned
-    uint256 public nftBurned;
 
     // The timestamp of the last vote
     uint256 public lastVote;
@@ -34,13 +41,17 @@ contract MyContract {
     // The minimum amount of ETH required to purchase an NFT
     uint256 public minEth = 0.05 ether;
 
-    // The duration of a vote, in seconds
+    // The duration of a vote, in seconds (1 day)
     uint256 public voteDuration = 86400;
 
     // The constructor, which sets the owner of the contract
-    constructor() public {}
+    constructor() {
+        lastVote = block.timestamp;
+        totalNFTs = 100;
+    }
 
     error purchaseNFT__MintPriceNotMet();
+    error claimEth__GameNotOver();
 
     // Allows a user to purchase an NFT
     function purchaseNft() public payable {
@@ -49,7 +60,10 @@ contract MyContract {
             revert purchaseNFT__MintPriceNotMet();
         }
 
-        purchasedNFTs[msg.sender] = NFTid;
+        uint256 uNFTid = NFTid.current();
+
+        purchasedNFTs[uNFTid] = msg.sender;
+        survivingNFTs.push(uNFTid);
 
         NFTid.increment();
 
@@ -58,41 +72,63 @@ contract MyContract {
 
     // Allows a user to vote on which NFT to burn
     function vote(uint256 nftId) public {
-        // Check if a vote is currently in progress
-        require(
-            block.timestamp - lastVote >= voteDuration,
-            "A vote is already in progress"
-        );
-
         // Store the NFT ID and the address of the user who voted
-        lastNft = NFTid;
-        lastVote = block.timestamp;
-    }
 
-    // Burns the NFT that received the most votes
-    function burnNft() public {
-        // Check if the current vote has expired
-        require(
-            block.timestamp - lastVote < voteDuration,
-            "The current vote has not expired"
-        );
+        uint256 currentEpoch = epoch.current();
 
-        // Burn the NFT that received the most votes
-        nftBurned++;
-        delete purchasedNFTs[lastNft];
+        if (block.timestamp - lastVote >= voteDuration) {
+            epoch.increment();
+            lastVote = block.timestamp;
 
-        // Send all the collected ETH to the owner of the last NFT
-        lastNft.transfer(totalEth);
+            // burn NFT that received the most votes
+            // implement using for loop but consider max heap if possible
+
+            uint256 mostVoted;
+            uint16 mostVotes = 1;
+
+            for (uint256 i = 0; i < survivingNFTs.length; i++) {
+                // get the current array element
+                uint256 element = survivingNFTs[i];
+
+                if (element == 0) {
+                    break;
+                }
+
+                uint16 voteCount = voteTally[currentEpoch][element];
+
+                if (voteCount > mostVotes) {
+                    mostVoted = element;
+                    mostVotes = voteCount;
+                }
+            }
+
+            // Delete from surviving NFTs and Purchased NFTs the
+            // most voted NFT
+            purchasedNFTs[mostVoted] = address(0);
+
+            // sets to 0
+            delete survivingNFTs[mostVoted];
+            totalNFTs = totalNFTs - 1;
+        }
+
+        voteTally[currentEpoch][nftId] = voteTally[currentEpoch][nftId] + 1;
     }
 
     function claimEth() public {
-        // Check if the caller is the owner of the last remaining NFT
-        require(
-            msg.sender == lastNft,
-            "Only the owner of the last remaining NFT can claim the collected ETH"
-        );
+        if (totalNFTs != 1) {
+            revert claimEth__GameNotOver();
+        }
 
-        // Send all the collected ETH to the caller
-        msg.sender.transfer(totalEth);
+        uint256 winningNFT;
+
+        for (uint256 i = 0; i < survivingNFTs.length; i++) {
+            if (survivingNFTs[i] != 0) {
+                winningNFT = survivingNFTs[i];
+            }
+        }
+
+        address payable winner = payable(purchasedNFTs[winningNFT]);
+
+        winner.transfer(totalEth);
     }
 }
