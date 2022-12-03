@@ -1,126 +1,156 @@
-const {
-  time,
-  loadFixture,
-} = require("@nomicfoundation/hardhat-network-helpers");
-const { anyValue } = require("@nomicfoundation/hardhat-chai-matchers/withArgs");
 const { expect } = require("chai");
+const { ethers } = require("hardhat");
+const { deployContract, getWallets } = require("ethereum-waffle");
+const MyContract = require("../build/MyContract.json");
 
-describe("Lock", function () {
-  // We define a fixture to reuse the same setup in every test.
-  // We use loadFixture to run this setup once, snapshot that state,
-  // and reset Hardhat Network to that snapshot in every test.
-  async function deployOneYearLockFixture() {
-    const ONE_YEAR_IN_SECS = 365 * 24 * 60 * 60;
-    const ONE_GWEI = 1_000_000_000;
+// Helper function to advance time by the specified duration
+const advanceTime = (duration) => {
+  const id = Date.now();
 
-    const lockedAmount = ONE_GWEI;
-    const unlockTime = (await time.latest()) + ONE_YEAR_IN_SECS;
+  return new Promise((resolve) => {
+    web3.currentProvider.sendAsync(
+      {
+        jsonrpc: "2.0",
+        method: "evm_increaseTime",
+        params: [duration],
+        id: id,
+      },
+      (err) => {
+        if (err) {
+          return reject(err);
+        }
 
-    // Contracts are deployed using the first signer/account by default
-    const [owner, otherAccount] = await ethers.getSigners();
+        return resolve();
+      }
+    );
+  });
+};
 
-    const Lock = await ethers.getContractFactory("Lock");
-    const lock = await Lock.deploy(unlockTime, { value: lockedAmount });
+describe("MyContract", () => {
+  let owner;
+  let contract;
 
-    return { lock, unlockTime, lockedAmount, owner, otherAccount };
-  }
-
-  describe("Deployment", function () {
-    it("Should set the right unlockTime", async function () {
-      const { lock, unlockTime } = await loadFixture(deployOneYearLockFixture);
-
-      expect(await lock.unlockTime()).to.equal(unlockTime);
-    });
-
-    it("Should set the right owner", async function () {
-      const { lock, owner } = await loadFixture(deployOneYearLockFixture);
-
-      expect(await lock.owner()).to.equal(owner.address);
-    });
-
-    it("Should receive and store the funds to lock", async function () {
-      const { lock, lockedAmount } = await loadFixture(
-        deployOneYearLockFixture
-      );
-
-      expect(await ethers.provider.getBalance(lock.address)).to.equal(
-        lockedAmount
-      );
-    });
-
-    it("Should fail if the unlockTime is not in the future", async function () {
-      // We don't use the fixture here because we want a different deployment
-      const latestTime = await time.latest();
-      const Lock = await ethers.getContractFactory("Lock");
-      await expect(Lock.deploy(latestTime, { value: 1 })).to.be.revertedWith(
-        "Unlock time should be in the future"
-      );
-    });
+  beforeEach(async () => {
+    // Get the owner's wallet and the contract instance
+    [owner] = await getWallets();
+    contract = await deployContract(owner, MyContract, []);
   });
 
-  describe("Withdrawals", function () {
-    describe("Validations", function () {
-      it("Should revert with the right error if called too soon", async function () {
-        const { lock } = await loadFixture(deployOneYearLockFixture);
+  it("should start with 100 NFTs available", async () => {
+    const totalNFTs = await contract.totalNFTs();
+    expect(totalNFTs).to.equal(100);
+  });
 
-        await expect(lock.withdraw()).to.be.revertedWith(
-          "You can't withdraw yet"
-        );
-      });
+  it("should allow a user to purchase an NFT", async () => {
+    const value = ethers.utils.parseEther("0.05");
+    await contract.purchaseNft({ value });
 
-      it("Should revert with the right error if called from another account", async function () {
-        const { lock, unlockTime, otherAccount } = await loadFixture(
-          deployOneYearLockFixture
-        );
+    const totalEth = await contract.totalEth();
+    expect(totalEth).to.equal(value);
 
-        // We can increase the time in Hardhat Network
-        await time.increaseTo(unlockTime);
+    const uNFTid = await contract.NFTid();
+    const purchasedNFT = await contract.purchasedNFTs(uNFTid);
+    expect(purchasedNFT).to.equal(owner.address);
 
-        // We use lock.connect() to send a transaction from another account
-        await expect(lock.connect(otherAccount).withdraw()).to.be.revertedWith(
-          "You aren't the owner"
-        );
-      });
+    const survivingNFTs = await contract.survivingNFTs(0);
+    expect(survivingNFTs).to.equal(uNFTid);
+  });
 
-      it("Shouldn't fail if the unlockTime has arrived and the owner calls it", async function () {
-        const { lock, unlockTime } = await loadFixture(
-          deployOneYearLockFixture
-        );
+  it("should not allow a user to purchase an NFT without the minimum ETH", async () => {
+    await expect(contract.purchaseNft()).to.be.revertedWith(
+      "purchaseNFT__MintPriceNotMet"
+    );
+  });
 
-        // Transactions are sent using the first signer by default
-        await time.increaseTo(unlockTime);
+  it("should allow a user to vote on which NFT to burn", async () => {
+    const value = ethers.utils.parseEther("0.05");
+    await contract.purchaseNft({ value });
+    const uNFTid = await contract.NFTid();
 
-        await expect(lock.withdraw()).not.to.be.reverted;
-      });
-    });
+    // Advance time by the vote duration
+    await advanceTime(86400);
 
-    describe("Events", function () {
-      it("Should emit an event on withdrawals", async function () {
-        const { lock, unlockTime, lockedAmount } = await loadFixture(
-          deployOneYearLockFixture
-        );
+    await contract.vote(0, uNFTid);
 
-        await time.increaseTo(unlockTime);
+    const currentEpoch = await contract.epoch();
+    const voteBool = await contract.voteBool(currentEpoch, owner.address);
+    expect(voteBool).to.be.true;
 
-        await expect(lock.withdraw())
-          .to.emit(lock, "Withdrawal")
-          .withArgs(lockedAmount, anyValue); // We accept any value as `when` arg
-      });
-    });
+    const voteTally = await contract.voteTally(currentEpoch, uNFTid);
+    expect(voteTally).to.equal(1);
+  });
 
-    describe("Transfers", function () {
-      it("Should transfer the funds to the owner", async function () {
-        const { lock, unlockTime, lockedAmount, owner } = await loadFixture(
-          deployOneYearLockFixture
-        );
+  it("should not allow a user to vote without an NFT or if they have already voted", async () => {
+    // Try to vote without an NFT
+    await expect(contract.vote(0, 0)).to.be.revertedWith(
+      "vote__IneligibleToVote"
+    );
 
-        await time.increaseTo(unlockTime);
+    const value = ethers.utils.parseEther("0.05");
+    await contract.purchaseNft({ value });
+    const uNFTid = await contract.NFTid();
 
-        await expect(lock.withdraw()).to.changeEtherBalances(
-          [owner, lock],
-          [lockedAmount, -lockedAmount]
-        );
-      });
-    });
+    // Advance time by the vote duration
+    await advanceTime(86400);
+
+    await contract.vote(0, uNFTid);
+
+    // Try to vote again
+    await expect(contract.vote(0, uNFTid)).to.be.revertedWith(
+      "vote__IneligibleToVote"
+    );
+  });
+
+  it("should not allow a user to vote on an NFT that has already been voted out", async () => {
+    // Purchase two NFTs and vote one out
+    const value = ethers.utils.parseEther("0.05");
+    await contract.purchaseNft({ value });
+    const uNFTid1 = await contract.NFTid();
+    await contract.purchaseNft({ value });
+    const uNFTid2 = await contract.NFTid();
+
+    // Advance time by the vote duration
+    await advanceTime(86400);
+
+    await contract.vote(0, uNFTid1);
+
+    // Try to vote with the NFT that has already been voted out
+    await expect(contract.vote(0, uNFTid2)).to.be.revertedWith(
+      "vote__NFTAlreadyVotedOut"
+    );
+  });
+
+  it("should allow the owner of the last surviving NFT to claim the ETH", async () => {
+    // Purchase two NFTs and vote one out
+    const value = ethers.utils.parseEther("0.05");
+    await contract.purchaseNft({ value });
+    const uNFTid1 = await contract.NFTid();
+    await contract.purchaseNft({ value });
+    const uNFTid2 = await contract.NFTid();
+
+    // Advance time by the vote duration
+    await advanceTime(86400);
+
+    await contract.vote(0, uNFTid1);
+
+    // Advance time by the vote duration again and vote out the remaining NFT
+    await advanceTime(86400);
+    await contract.vote(0, uNFTid2);
+
+    // The game is now over, so the owner of the surviving NFT can claim the ETH
+    const balanceBefore = await owner.getBalance();
+    await contract.claimEth();
+    const balanceAfter = await owner.getBalance();
+
+    expect(balanceAfter.sub(balanceBefore)).to.equal(value.mul(2));
+  });
+
+  it("should not allow a user to claim the ETH if the game is not over", async () => {
+    // Purchase an NFT and try to claim the ETH
+    const value = ethers.utils.parseEther("0.05");
+    await contract.purchaseNft({ value });
+    await expect(contract.claimEth()).to.be.revertedWith(
+      "claimEth__GameNotOver"
+    );
   });
 });
