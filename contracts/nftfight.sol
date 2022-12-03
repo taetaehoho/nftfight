@@ -38,9 +38,6 @@ contract MyContract {
     // The timestamp of the last vote
     uint256 public lastVote;
 
-    // The address of the last NFT that was burned
-    address public lastNft;
-
     // The minimum amount of ETH required to purchase an NFT
     uint256 public minEth = 0.05 ether;
 
