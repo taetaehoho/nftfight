@@ -25,7 +25,7 @@ const advanceTime = (duration) => {
 };
 
 describe("NFTfight Unit Tests", () => {
-  let contract;
+  let nftfight, ;
 
   beforeEach(async () => {
     // Get the owner's wallet and the contract instance
