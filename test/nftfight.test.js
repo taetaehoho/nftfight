@@ -1,7 +1,5 @@
-const { expect } = require("chai");
-const { ethers } = require("hardhat");
-const { deployContract, getWallets } = require("ethereum-waffle");
-const MyContract = require("../build/MyContract.json");
+const { assert, expect } = require("chai");
+const { network, deployments, ethers } = require("hardhat");
 
 // Helper function to advance time by the specified duration
 const advanceTime = (duration) => {
@@ -26,8 +24,7 @@ const advanceTime = (duration) => {
   });
 };
 
-describe("MyContract", () => {
-  let owner;
+describe("NFTfight Unit Tests", () => {
   let contract;
 
   beforeEach(async () => {

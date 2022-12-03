@@ -5,8 +5,6 @@ pragma solidity ^0.8.17;
 // participate in a weekly vote to determine which NFT to burn. The final
 // NFT left standing gets to claim all the ETH.
 
-import "@openzeppelin/contracts/utils/Counters.sol";
-
 // review: chads use Foundry
 
 contract MyContract {
