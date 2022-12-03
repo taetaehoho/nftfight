@@ -54,6 +54,7 @@ contract MyContract {
     error claimEth__GameNotOver();
     error vote__IneligibleToVote();
     error vote__NFTAlreadyVotedOut();
+    error vote__InsufficientMints();
 
     // Allows a user to purchase an NFT
     function purchaseNft() public payable {
@@ -81,6 +82,11 @@ contract MyContract {
 
         if (survivingNFTs[nftId] == 0) {
             revert vote__NFTAlreadyVotedOut();
+        }
+
+        // if less than half the total NFTs have not been minted yet cannot start the game
+        if (2 * NFTid.current() < totalNFTs) {
+            revert vote__InsufficientMints();
         }
 
         uint256 currentEpoch = epoch.current();
@@ -147,4 +153,6 @@ contract MyContract {
 
         winner.transfer(totalEth);
     }
+
+    /* ======================== Getters ======================== */
 }
