@@ -29,6 +29,9 @@ contract MyContract {
     // Epoch: (tokenid: vote)
     mapping(uint256 => mapping(uint256 => uint8)) voteTally;
 
+    // per epoch whether you voted already or not
+    mapping(uint256 => mapping(address => bool)) voteBool;
+
     // The total ETH collected from NFT purchases
     uint256 public totalEth;
 
@@ -52,6 +55,7 @@ contract MyContract {
 
     error purchaseNFT__MintPriceNotMet();
     error claimEth__GameNotOver();
+    error vote__IneligibleToVote();
 
     // Allows a user to purchase an NFT
     function purchaseNft() public payable {
@@ -71,17 +75,25 @@ contract MyContract {
     }
 
     // Allows a user to vote on which NFT to burn
-    function vote(uint256 nftId) public {
-        // Store the NFT ID and the address of the user who voted
+    function vote(uint256 nftId, uint256 yournftId) public {
+        // if you do not have an NFT, have already been voted out then you cannot vote
+        if (purchasedNFTs[yournftId] != msg.sender) {
+            revert vote__IneligibleToVote();
+        }
 
         uint256 currentEpoch = epoch.current();
+
+        // if you already have voted then you cannot vote
+        if (voteBool[currentEpoch][msg.sender] == true) {
+            revert vote__IneligibleToVote();
+        }
 
         if (block.timestamp - lastVote >= voteDuration) {
             epoch.increment();
             lastVote = block.timestamp;
 
-            // burn NFT that received the most votes
-            // implement using for loop but consider max heap if possible
+            // burn NFT that received the most votes implement using for loop but consider max heap if possible
+            // !!! factor out into a "changing state function"
 
             uint256 mostVoted;
             uint16 mostVotes = 1;
@@ -102,8 +114,7 @@ contract MyContract {
                 }
             }
 
-            // Delete from surviving NFTs and Purchased NFTs the
-            // most voted NFT
+            // Delete from surviving NFTs and Purchased NFTs the most voted NFT
             purchasedNFTs[mostVoted] = address(0);
 
             // sets to 0
@@ -111,6 +122,7 @@ contract MyContract {
             totalNFTs = totalNFTs - 1;
         }
 
+        voteBool[currentEpoch][msg.sender] = true;
         voteTally[currentEpoch][nftId] = voteTally[currentEpoch][nftId] + 1;
     }
 
