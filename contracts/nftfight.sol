@@ -17,20 +17,20 @@ contract MyContract {
     Counters.Counter private epoch;
 
     // Total Number of NFTs currently available
-    uint256 public totalNFTs;
+    uint16 public totalNFTs;
 
-    // Keeps track of which "NFT" belongs to who
-    mapping(uint256 => address) public purchasedNFTs;
+    // NFTid => purchaser Address
+    mapping(uint16 => address) public purchasedNFTs;
 
     // Keeps track of what NFTs are still existing
-    uint256[] survivingNFTs;
+    uint16[] survivingNFTs;
 
     // !!! not sure if we need uint256 vs smaller
-    // Epoch: (tokenid: vote)
-    mapping(uint256 => mapping(uint256 => uint8)) voteTally;
+    // Epoch => (tokenid => vote)
+    mapping(uint16 => mapping(uint16 => uint16)) voteTally;
 
-    // per epoch whether you voted already or not
-    mapping(uint256 => mapping(address => bool)) voteBool;
+    // Epoch => address => bool whether address has voted for this epoch or not
+    mapping(uint16 => mapping(address => bool)) voteBool;
 
     // The total ETH collected from NFT purchases
     uint256 public totalEth;
@@ -41,11 +41,11 @@ contract MyContract {
     // The minimum amount of ETH required to purchase an NFT
     uint256 public minEth;
 
-    // The duration of a vote, in seconds (1 day)
-    uint256 public voteDuration;
+    // The duration of a vote, in seconds (1 day) max value 32 years
+    uint32 public voteDuration;
 
     // The constructor, which sets the owner of the contract
-    constructor(uint256 _totalNFTs, uint256 _voteDuration, uint256 _minEth) {
+    constructor(uint16 _totalNFTs, uint32 _voteDuration, uint256 _minEth) {
         lastVote = block.timestamp;
         totalNFTs = _totalNFTs;
         minEth = _minEth;
@@ -58,6 +58,8 @@ contract MyContract {
     error vote__NFTAlreadyVotedOut();
     error vote__InsufficientMints();
 
+    event NFTVotedOut(uint16 indexed _NFTid);
+
     // Allows a user to purchase an NFT
     function purchaseNft() public payable {
         // Check if the user has sent the minimum amount of ETH
@@ -65,7 +67,7 @@ contract MyContract {
             revert purchaseNFT__MintPriceNotMet();
         }
 
-        uint256 uNFTid = NFTid.current();
+        uint16 uNFTid = uint16(NFTid.current());
 
         purchasedNFTs[uNFTid] = msg.sender;
         survivingNFTs.push(uNFTid);
@@ -76,7 +78,7 @@ contract MyContract {
     }
 
     // Allows a user to vote on which NFT to burn
-    function vote(uint256 nftId, uint256 yournftId) public {
+    function vote(uint16 nftId, uint16 yournftId) public {
         // if you do not have an NFT, have already been voted out then you cannot vote
         if (purchasedNFTs[yournftId] != msg.sender) {
             revert vote__IneligibleToVote();
@@ -91,7 +93,7 @@ contract MyContract {
             revert vote__InsufficientMints();
         }
 
-        uint256 currentEpoch = epoch.current();
+        uint16 currentEpoch = uint16(epoch.current());
 
         // if you already have voted then you cannot vote
         if (voteBool[currentEpoch][msg.sender] == true) {
@@ -106,11 +108,11 @@ contract MyContract {
             // burn NFT that received the most votes - consider max heap if possible
             // !!! factor out into a "changing state function"
 
-            uint256 mostVoted;
+            uint16 mostVoted;
             uint16 mostVotes = 1;
 
-            for (uint256 i = 0; i < survivingNFTs.length; i++) {
-                uint256 element = survivingNFTs[i];
+            for (uint16 i = 0; i < survivingNFTs.length; i++) {
+                uint16 element = survivingNFTs[i];
 
                 if (element == 0) {
                     break;
@@ -126,10 +128,9 @@ contract MyContract {
 
             // Delete from surviving NFTs and Purchased NFTs the most voted NFT
             purchasedNFTs[mostVoted] = address(0);
-
-            // sets to 0
             delete survivingNFTs[mostVoted];
             totalNFTs = totalNFTs - 1;
+            emit NFTVotedOut(mostVoted);
         }
 
         voteBool[currentEpoch][msg.sender] = true;
@@ -143,9 +144,9 @@ contract MyContract {
             revert claimEth__GameNotOver();
         }
 
-        uint256 winningNFT;
+        uint16 winningNFT;
 
-        for (uint256 i = 0; i < survivingNFTs.length; i++) {
+        for (uint16 i = 0; i < survivingNFTs.length; i++) {
             if (survivingNFTs[i] != 0) {
                 winningNFT = survivingNFTs[i];
             }
@@ -162,7 +163,16 @@ contract MyContract {
         return NFTid.current();
     }
 
-    function getEpoch() public view returns (uint8 epoch) {
+    // !!!
+    function getEpoch() public view returns (uint256 epoch) {
         return epoch.current();
+    }
+
+    function getTotalEth() public view returns (uint256 totalEth) {
+        return totalEth;
+    }
+
+    function getSurviving(uint16 _NFTid) public view returns (bool surviving) {
+        return survivingNFTs[_NFTid];
     }
 }
