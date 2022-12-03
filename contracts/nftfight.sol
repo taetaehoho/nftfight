@@ -56,6 +56,7 @@ contract MyContract {
     error purchaseNFT__MintPriceNotMet();
     error claimEth__GameNotOver();
     error vote__IneligibleToVote();
+    error vote__NFTAlreadyVotedOut();
 
     // Allows a user to purchase an NFT
     function purchaseNft() public payable {
@@ -81,6 +82,10 @@ contract MyContract {
             revert vote__IneligibleToVote();
         }
 
+        if (survivingNFTs[nftId] == 0) {
+            revert vote__NFTAlreadyVotedOut();
+        }
+
         uint256 currentEpoch = epoch.current();
 
         // if you already have voted then you cannot vote
@@ -88,18 +93,18 @@ contract MyContract {
             revert vote__IneligibleToVote();
         }
 
+        // count votes and kick one nft out if its been longer than vote duration
         if (block.timestamp - lastVote >= voteDuration) {
             epoch.increment();
             lastVote = block.timestamp;
 
-            // burn NFT that received the most votes implement using for loop but consider max heap if possible
+            // burn NFT that received the most votes - consider max heap if possible
             // !!! factor out into a "changing state function"
 
             uint256 mostVoted;
             uint16 mostVotes = 1;
 
             for (uint256 i = 0; i < survivingNFTs.length; i++) {
-                // get the current array element
                 uint256 element = survivingNFTs[i];
 
                 if (element == 0) {
@@ -123,6 +128,8 @@ contract MyContract {
         }
 
         voteBool[currentEpoch][msg.sender] = true;
+
+        // have to check if the nftid they are voting for is valid
         voteTally[currentEpoch][nftId] = voteTally[currentEpoch][nftId] + 1;
     }
 
