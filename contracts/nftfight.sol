@@ -17,7 +17,7 @@ contract MyContract {
     Counters.Counter private epoch;
 
     // Total Number of NFTs currently available
-    uint16 public totalNFTs;
+    uint256 public totalNFTs;
 
     // Keeps track of which "NFT" belongs to who
     mapping(uint256 => address) public purchasedNFTs;
@@ -39,15 +39,17 @@ contract MyContract {
     uint256 public lastVote;
 
     // The minimum amount of ETH required to purchase an NFT
-    uint256 public minEth = 0.05 ether;
+    uint256 public minEth;
 
     // The duration of a vote, in seconds (1 day)
-    uint256 public voteDuration = 86400;
+    uint256 public voteDuration;
 
     // The constructor, which sets the owner of the contract
-    constructor() {
+    constructor(uint256 _totalNFTs, uint256 _voteDuration, uint256 _minEth) {
         lastVote = block.timestamp;
-        totalNFTs = 100;
+        totalNFTs = _totalNFTs;
+        minEth = _minEth;
+        voteDuration = _voteDuration;
     }
 
     error purchaseNFT__MintPriceNotMet();
@@ -155,4 +157,12 @@ contract MyContract {
     }
 
     /* ======================== Getters ======================== */
+
+    function getNFTid() public view returns (uint256 nftId) {
+        return NFTid.current();
+    }
+
+    function getEpoch() public view returns (uint8 epoch) {
+        return epoch.current();
+    }
 }
