@@ -7,6 +7,8 @@ pragma solidity ^0.8.17;
 
 import "@openzeppelin/contracts/utils/Counters.sol";
 
+// review: chads use Foundry
+
 contract MyContract {
     using Counters for Counters.Counter;
 
@@ -15,6 +17,14 @@ contract MyContract {
 
     // epoch Counter
     Counters.Counter private epoch;
+
+    // review: why uint16?
+    //
+    // note:   people generally use smaller uints for slot packing, which saves gas, more than to give the number a cap
+    //         EVM is stack-based and each unit in the stack is a slot. a slot holds 32 bytes (i.e. 256 bits — hence uint256)
+    //         in some cases less slots = less gas (but only if you use enough to pack it to 32 bytes at a time, if not it actually
+    //         uses more gas because EVM needs to pack the unused space with 0's, which costs gas)
+    //         I'm still learning about EVM and packing but it looks like this doesn't get any gas benefits since your only pushing 1 uint16 at a time
 
     // Total Number of NFTs currently available
     uint16 public totalNFTs;
@@ -32,6 +42,7 @@ contract MyContract {
     // Epoch => address => bool whether address has voted for this epoch or not
     mapping(uint16 => mapping(address => bool)) voteBool;
 
+    // review: what is the need for this when address(this).balance exists?
     // The total ETH collected from NFT purchases
     uint256 public totalEth;
 
@@ -67,6 +78,7 @@ contract MyContract {
             revert purchaseNFT__MintPriceNotMet();
         }
 
+        // review: where does this require NFTid <= totalNFTs?
         uint16 uNFTid = uint16(NFTid.current());
 
         purchasedNFTs[uNFTid] = msg.sender;
@@ -76,6 +88,12 @@ contract MyContract {
 
         totalEth += msg.value;
     }
+
+    // review: what if a user transfers the NFT?
+    //
+    // note:   you could make the NFT's soulbound — either forever or until the fight is won
+    //         this can be done by overriding the OZ's NFT transfer functions once you implement the NFT part, and reverting if the auction isn't won
+    //         look into overriding functions when you're ready
 
     // Allows a user to vote on which NFT to burn
     function vote(uint16 nftId, uint16 yournftId) public {
@@ -163,15 +181,40 @@ contract MyContract {
         return NFTid.current();
     }
 
-    // !!!
+    // review: you already have epoch defined as a storage variable
+    //         if you're using a solidity plugin for your code editor (you should!) this will have a 
+    //         yellow line under it. also if you try to compile it would give you a yellow and red warning
+    //         yellow: for creating a variable that shadows another
+    //         red: for trying to get .current() out of that new variable, which isn't an OZ counter
+    //
+    // note:   pretty sure the main purpose of an OZ counter was to be safe back before EVM checked for overflow
+    //         OZ counters are pretty useless now imo
     function getEpoch() public view returns (uint256 epoch) {
         return epoch.current();
     }
-
+    
+    // review: useless getter and variable is already defined
+    //         getters are automatically created for public storage variables — and totalEth is public                
     function getTotalEth() public view returns (uint256 totalEth) {
         return totalEth;
     }
 
+    // review: this doesn't work for a couple of reasons
+    //         with array[i] you're querying the index of the survivingNFTs array — not the item in the array
+    //         so for an array x = [1,2,3] and i = 1, x[i] == 2
+    //         also it returns the id at index _NFTid, not a bool
+    //
+    // note:   use OpenZeppelin's EnummerableSet.sol
+    //         to use it, import EnummerableSet.sol (it's in utils/structs) and in the contract (usually at the top, 
+    //         but you can put it anywhere since solidity is effectively just a mess of letters before it compiles) 
+    //         type 'using EnummerableSet for EnumerableSet.UintSet;'
+    //         then instead of 'uint16[] survivingNFTs', do EnumerableSet.UintSet survivingNFTs' — then look at the functions
+    //         in EnummerableSet.sol — one of them is .contains(). You can put survivingNFTs.contains(_NFTid) in this function
+    //
+    //         p.s.   the info on using EnummerableSet that I gave is also at the top of EnummerableSet.sol
+    //         p.p.s. you didn't define the visibility of survivingNFTs (you wrote 'uint16[] survivingNFTs')
+    //                because this defaults to private.. yet you used 'Counters.Counter private NFTid;' 
+    //                instead of 'Counters.Counter NFTid;'  — just noting this randomly 
     function getSurviving(uint16 _NFTid) public view returns (bool surviving) {
         return survivingNFTs[_NFTid];
     }
