@@ -1,0 +1,2 @@
+1. add foundry testings
+2. see gas differences between uint16 for indiv vars and uint256

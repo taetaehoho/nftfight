@@ -1,13 +1,4 @@
-node_modules
-.env
-coverage
-coverage.json
-typechain
-typechain-types
-
-# Hardhat files
+lib
+out
 cache
-artifacts
-
-todo.txt
-
+.env

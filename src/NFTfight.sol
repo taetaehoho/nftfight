@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.17;
+pragma solidity ^0.8.7;
 
 // This contract allows people to purchase NFTs for 0.05 ETH, and then to
 // participate in a weekly vote to determine which NFT to burn. The final
 // NFT left standing gets to claim all the ETH.
 
-// review: chads use Foundry
-
-contract MyContract {
+contract NFTfight {
     // NFT Id
     uint256 public NFTid = 0;
 
