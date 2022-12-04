@@ -5,7 +5,25 @@ pragma solidity ^0.8.7;
 // participate in a weekly vote to determine which NFT to burn. The final
 // NFT left standing gets to claim all the ETH.
 
-contract NFTfight {
+import "chainlink/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
+import "chainlink/v0.8/VRFConsumerBaseV2.sol";
+
+error purchaseNFT__MintPriceNotMet();
+error purchaseNFT__SoldOut();
+error claimEth__GameNotOver();
+error vote__IneligibleToVote();
+error vote__NFTAlreadyVotedOut();
+error vote__InsufficientMints();
+
+contract NFTfight is VRFConsumerBaseV2 {
+    // Chainlink VRF Variables
+    VRFCoordinatorV2Interface private immutable i_vrfCoordinator;
+    uint64 private immutable i_subscriptionId;
+    bytes32 private immutable i_gasLane;
+    uint32 private immutable i_callbackGasLimit;
+    uint16 private constant REQUEST_CONFIRMATIONS = 3;
+    uint32 private constant NUM_WORDS = 1;
+
     // NFT Id
     uint256 public NFTid = 0;
 
@@ -38,21 +56,27 @@ contract NFTfight {
     uint256 public voteDuration;
 
     // The constructor, which sets the owner of the contract
-    constructor(uint256 _totalNFTs, uint256 _voteDuration, uint256 _minEth) {
+    constructor(
+        uint256 _totalNFTs,
+        uint256 _voteDuration,
+        uint256 _minEth,
+        address vrfCoordinatorV2,
+        uint64 subscriptionId,
+        bytes32 gasLane, // keyHash
+        uint32 callbackGasLimit
+    ) VRFConsumerBaseV2(vrfCoordinatorV2) {
+        i_vrfCoordinator = VRFCoordinatorV2Interface(vrfCoordinatorV2);
+        i_gasLane = gasLane;
+        i_subscriptionId = subscriptionId;
+        i_callbackGasLimit = callbackGasLimit;
         lastVote = block.timestamp;
         totalNFTs = _totalNFTs;
         minEth = _minEth;
         voteDuration = _voteDuration;
     }
 
-    error purchaseNFT__MintPriceNotMet();
-    error purchaseNFT__SoldOut();
-    error claimEth__GameNotOver();
-    error vote__IneligibleToVote();
-    error vote__NFTAlreadyVotedOut();
-    error vote__InsufficientMints();
-
     event NFTVotedOut(uint256 indexed _NFTid);
+    event RandomRequested(uint256 indexed requestId);
 
     // Allows a user to purchase an NFT
     function purchaseNft() public payable {
@@ -82,8 +106,9 @@ contract NFTfight {
             revert vote__NFTAlreadyVotedOut();
         }
 
-        // if less than half the total NFTs have not been minted yet cannot start the game
-        if (2 * NFTid < totalNFTs) {
+        // game cannot start until all NFTs have been minted
+        // !!! revisit design decision
+        if (NFTid < totalNFTs) {
             revert vote__InsufficientMints();
         }
 
@@ -102,6 +127,9 @@ contract NFTfight {
 
             uint256 mostVoted;
             uint256 mostVotes = 1;
+            uint256[] memory mostVotedTies;
+
+            // !!! change this to view function to save gas
 
             for (uint16 i = 0; i < survivingNFTs.length; i++) {
                 uint256 element = survivingNFTs[i];
@@ -115,8 +143,23 @@ contract NFTfight {
                 if (voteCount > mostVotes) {
                     mostVoted = element;
                     mostVotes = voteCount;
+                    delete mostVotedTies;
+                } else if (voteCount == mostVotes) {
+                    mostVotedTies.push(element);
                 }
             }
+
+            uint256 requestId = i_vrfCoordinator.requestRandomWords(
+                i_gasLane,
+                i_subscriptionId,
+                REQUEST_CONFIRMATIONS,
+                i_callbackGasLimit,
+                NUM_WORDS
+            );
+
+            // !!! have to implement the actual tie breaking here
+
+            emit RandomRequested(requestId);
 
             // Delete from surviving NFTs and Purchased NFTs the most voted NFT
             purchasedNFTs[mostVoted] = address(0);
@@ -130,6 +173,12 @@ contract NFTfight {
         // have to check if the nftid they are voting for is valid
         voteTally[epoch][nftId] = voteTally[epoch][nftId] + 1;
     }
+
+    // !!! change to fit VRF
+    function fulfillRandomWords(
+        uint256 requestId,
+        uint256[] memory randomWords
+    ) internal override {}
 
     function claimEth() public {
         if (totalNFTs != 1) {
