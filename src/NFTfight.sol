@@ -127,7 +127,8 @@ contract NFTfight is VRFConsumerBaseV2 {
 
             uint256 mostVoted;
             uint256 mostVotes = 1;
-            uint256[] memory mostVotedTies;
+            uint256 tieIndex = 0;
+            uint256[] memory mostVotedTies = new uint256[](totalNFTs);
 
             // !!! change this to view function to save gas
 
@@ -144,8 +145,10 @@ contract NFTfight is VRFConsumerBaseV2 {
                     mostVoted = element;
                     mostVotes = voteCount;
                     delete mostVotedTies;
+                    tieIndex = 0;
                 } else if (voteCount == mostVotes) {
-                    mostVotedTies.push(element);
+                    mostVotedTies[tieIndex] = element;
+                    tieIndex = tieIndex + 1;
                 }
             }
 
