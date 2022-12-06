@@ -84,6 +84,7 @@ contract NFTfight {
             revert vote__IneligibleToVote();
         }
 
+        // you cannot vote for an NFT that is already out!
         if (survivingNFTs[nftId] == 0) {
             revert vote__NFTAlreadyVotedOut();
         }
@@ -160,7 +161,7 @@ contract NFTfight {
 
         voteBool[epoch][msg.sender] = true;
 
-        // have to check if the nftid they are voting for is valid
+        // !!! have to check if the nftid they are voting for is valid
         voteTally[epoch][nftId] = voteTally[epoch][nftId] + 1;
     }
 
