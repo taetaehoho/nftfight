@@ -72,7 +72,7 @@ contract NFTfight {
         survivingNFTs.push(NFTid);
         purchasePrice[msg.sender] = msg.value;
 
-        NFTPurchased(NFTid, msg.sender);
+        emit NFTPurchased(NFTid, msg.sender);
 
         NFTid = NFTid + 1;
     }
@@ -123,6 +123,7 @@ contract NFTfight {
 
                 uint256 voteCount = voteTally[epoch][element];
 
+                // !!! implement array resizing in Yul otherwise mostVotedTies will remain length of highest ties
                 if (voteCount > mostVotes) {
                     mostVoted = element;
                     mostVotes = voteCount;
@@ -161,30 +162,6 @@ contract NFTfight {
 
         // have to check if the nftid they are voting for is valid
         voteTally[epoch][nftId] = voteTally[epoch][nftId] + 1;
-    }
-
-    // !!! change to fit VRF
-    function fulfillRandomWords(
-        uint256 requestId,
-        uint256[] memory randomWords
-    ) internal override {}
-
-    function claimEth() public {
-        if (totalNFTs != 1) {
-            revert claimEth__GameNotOver();
-        }
-
-        uint256 winningNFT;
-
-        for (uint256 i = 0; i < survivingNFTs.length; i++) {
-            if (survivingNFTs[i] != 0) {
-                winningNFT = survivingNFTs[i];
-            }
-        }
-
-        address payable winner = payable(purchasedNFTs[winningNFT]);
-
-        winner.transfer(address(this).balance);
     }
 
     /* ======================== Helpers ======================== */
