@@ -5,9 +5,6 @@ pragma solidity ^0.8.7;
 // participate in a weekly vote to determine which NFT to burn. The final
 // NFT left standing gets to claim all the ETH.
 
-import "chainlink/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
-import "chainlink/v0.8/VRFConsumerBaseV2.sol";
-
 error purchaseNFT__MintPriceNotMet();
 error purchaseNFT__SoldOut();
 error claimEth__GameNotOver();
@@ -15,31 +12,25 @@ error vote__IneligibleToVote();
 error vote__NFTAlreadyVotedOut();
 error vote__InsufficientMints();
 
-contract NFTfight is VRFConsumerBaseV2 {
-    // Chainlink VRF Variables
-    VRFCoordinatorV2Interface private immutable i_vrfCoordinator;
-    uint64 private immutable i_subscriptionId;
-    bytes32 private immutable i_gasLane;
-    uint32 private immutable i_callbackGasLimit;
-    uint16 private constant REQUEST_CONFIRMATIONS = 3;
-    uint32 private constant NUM_WORDS = 1;
-
+contract NFTfight {
     // NFT Id
-    uint256 public NFTid = 0;
+    uint32 public NFTid = 0;
 
     // epoch Counter
-    uint256 public epoch;
+    uint32 public epoch;
 
     // Total Number of NFTs currently available
-    uint256 public totalNFTs;
+    uint32 public totalNFTs;
 
     // NFTid => purchaser Address
     mapping(uint256 => address) public purchasedNFTs;
 
+    // purchaser Address => NFTid
+    mapping(address => uint256) public purchasePrice;
+
     // Keeps track of what NFTs are still existing
     uint256[] survivingNFTs;
 
-    // !!! not sure if we need uint256 vs smaller
     // Epoch => (tokenid => vote)
     mapping(uint256 => mapping(uint256 => uint256)) voteTally;
 
@@ -56,19 +47,7 @@ contract NFTfight is VRFConsumerBaseV2 {
     uint256 public voteDuration;
 
     // The constructor, which sets the owner of the contract
-    constructor(
-        uint256 _totalNFTs,
-        uint256 _voteDuration,
-        uint256 _minEth,
-        address vrfCoordinatorV2,
-        uint64 subscriptionId,
-        bytes32 gasLane, // keyHash
-        uint32 callbackGasLimit
-    ) VRFConsumerBaseV2(vrfCoordinatorV2) {
-        i_vrfCoordinator = VRFCoordinatorV2Interface(vrfCoordinatorV2);
-        i_gasLane = gasLane;
-        i_subscriptionId = subscriptionId;
-        i_callbackGasLimit = callbackGasLimit;
+    constructor(uint32 _totalNFTs, uint256 _voteDuration, uint256 _minEth) {
         lastVote = block.timestamp;
         totalNFTs = _totalNFTs;
         minEth = _minEth;
@@ -76,7 +55,7 @@ contract NFTfight is VRFConsumerBaseV2 {
     }
 
     event NFTVotedOut(uint256 indexed _NFTid);
-    event RandomRequested(uint256 indexed requestId);
+    event NFTPurchased(uint256 indexed _NFTid, address indexed _buyer);
 
     // Allows a user to purchase an NFT
     function purchaseNft() public payable {
@@ -91,6 +70,9 @@ contract NFTfight is VRFConsumerBaseV2 {
 
         purchasedNFTs[NFTid] = msg.sender;
         survivingNFTs.push(NFTid);
+        purchasePrice[msg.sender] = msg.value;
+
+        NFTPurchased(NFTid, msg.sender);
 
         NFTid = NFTid + 1;
     }
@@ -152,17 +134,21 @@ contract NFTfight is VRFConsumerBaseV2 {
                 }
             }
 
-            uint256 requestId = i_vrfCoordinator.requestRandomWords(
-                i_gasLane,
-                i_subscriptionId,
-                REQUEST_CONFIRMATIONS,
-                i_callbackGasLimit,
-                NUM_WORDS
-            );
+            uint256[] memory tieLength = new uint256[](mostVotedTies.length);
 
-            // !!! have to implement the actual tie breaking here
+            // !!! does this work or is the array init at totalNFTs
+            for (uint16 i = 0; i < mostVotedTies.length; i++) {
+                tieLength[i] = purchasePrice[purchasedNFTs[mostVotedTies[i]]];
+            }
 
-            emit RandomRequested(requestId);
+            uint256 minVal = type(uint256).max;
+
+            for (uint16 i = 0; i < tieLength.length; i++) {
+                if (tieLength[i] < minVal) {
+                    minVal = tieLength[i];
+                    mostVoted = mostVotedTies[i];
+                }
+            }
 
             // Delete from surviving NFTs and Purchased NFTs the most voted NFT
             purchasedNFTs[mostVoted] = address(0);
