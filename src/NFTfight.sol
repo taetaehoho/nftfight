@@ -130,7 +130,6 @@ contract NFTfight is VRFConsumerBaseV2 {
             lastVote = block.timestamp;
 
             // burn NFT that received the most votes - consider max heap if possible
-            // !!! factor out into a "changing state function"
 
             uint32 mostVoted;
             uint32 mostVotes = 1;
@@ -199,15 +198,7 @@ contract NFTfight is VRFConsumerBaseV2 {
 
         uint32 winningNFT;
 
-        uint32[] memory winningNFTs = new uint32[](2);
-        uint8 counter = 0;
-
-        for (uint256 i = 0; i < survivingNFTs.length; i++) {
-            if (survivingNFTs[i] != 0) {
-                winningNFTs[counter] = survivingNFTs[i];
-                counter = counter + 1;
-            }
-        }
+        uint32[] memory winningNFTs = constructWinningArr();
 
         uint256[] memory pricePaid = new uint256[](2);
         for (uint256 i = 0; i < 2; i++) {
@@ -238,17 +229,9 @@ contract NFTfight is VRFConsumerBaseV2 {
         uint256 /* requestId */,
         uint256[] memory randomWords
     ) internal override {
-        // !!! Any way to not have to redo this work?
+        // !!! Any way to not have to redo this work while still using memory array?
 
-        uint32[] memory winningNFTs = new uint32[](2);
-        uint8 counter = 0;
-
-        for (uint256 i = 0; i < survivingNFTs.length; i++) {
-            if (survivingNFTs[i] != 0) {
-                winningNFTs[counter] = survivingNFTs[i];
-                counter = counter + 1;
-            }
-        }
+        uint32[] memory winningNFTs = constructWinningArr();
 
         uint256 indexOfWinner = randomWords[0] % 2;
 
@@ -263,6 +246,24 @@ contract NFTfight is VRFConsumerBaseV2 {
         if (survivingNFTs[_NFTid] != 0) {
             return true;
         }
+    }
+
+    function constructWinningArr()
+        public
+        view
+        returns (uint32[] memory _winningNFTs)
+    {
+        uint32[] memory winningNFTs = new uint32[](2);
+        uint8 counter = 0;
+
+        for (uint256 i = 0; i < survivingNFTs.length; i++) {
+            if (survivingNFTs[i] != 0) {
+                winningNFTs[counter] = survivingNFTs[i];
+                counter = counter + 1;
+            }
+        }
+
+        return winningNFTs;
     }
 
     function transferToWinner(address _winner) public {
