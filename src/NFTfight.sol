@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.7;
 
-// This contract allows people to purchase NFTs for 0.05 ETH, and then to
-// participate in a weekly vote to determine which NFT to burn. The final
-// NFT left standing gets to claim all the ETH.
-
 error purchaseNFT__MintPriceNotMet();
 error purchaseNFT__SoldOut();
 error claimEth__GameNotOver();
@@ -13,11 +9,22 @@ error vote__NFTAlreadyVotedOut();
 error InsufficientMints();
 error claimETH__VoteIncomplete();
 
-contract NFTfight {
-    // NFT Id
+import "chainlink/v0.8/VRFConsumerBaseV2.sol";
+import "chainlink/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
+
+contract NFTfight is VRFConsumerBaseV2 {
+    // VRF parameters
+    VRFCoordinatorV2Interface private immutable i_vrfCoordinator;
+    uint64 private immutable i_subscriptionId;
+    bytes32 private immutable i_gasLane;
+    uint32 private immutable i_callbackGasLimit;
+    uint16 private constant REQUEST_CONFIRMATIONS = 3;
+    uint32 private constant NUM_WORDS = 1;
+
+    // NFTid incremented per purchase
     uint32 public NFTid = 0;
 
-    // epoch Counter
+    // Epoch incremented per vote epoch
     uint32 public epoch;
 
     // Total number of NFTs
@@ -26,23 +33,23 @@ contract NFTfight {
     // Total number of remaining NFTs
     uint32 public remainingNFTs;
 
-    // The duration of a vote, in seconds (1 day) max value 32 years
+    // The duration of a vote, in seconds
     uint32 public voteDuration;
 
     // NFTid => purchaser Address
-    mapping(uint256 => address) public purchasedNFTs;
+    mapping(uint32 => address) public purchasedNFTs;
 
-    // purchaser Address => NFTid
+    // purchaser Address => purchase Price
     mapping(address => uint256) public purchasePrice;
 
-    // Keeps track of what NFTs are still existing
+    // Keeps track of what NFTs are still surviving
     uint32[] survivingNFTs;
 
     // Epoch => (tokenid => vote)
-    mapping(uint256 => mapping(uint256 => uint256)) voteTally;
+    mapping(uint32 => mapping(uint32 => uint32)) voteTally;
 
     // Epoch => address => bool whether address has voted for this epoch or not
-    mapping(uint256 => mapping(address => bool)) voteBool;
+    mapping(uint32 => mapping(address => bool)) voteBool;
 
     // The timestamp of the last vote
     uint256 public lastVote;
@@ -50,8 +57,24 @@ contract NFTfight {
     // The minimum amount of ETH required to purchase an NFT
     uint256 public minEth;
 
-    // The constructor, which sets the owner of the contract
-    constructor(uint32 _totalNFTs, uint32 _voteDuration, uint256 _minEth) {
+    event NFTVotedOut(uint256 indexed _NFTid);
+    event NFTPurchased(uint256 indexed _NFTid, address indexed _buyer);
+    event TieBreakerRequested(uint256 indexed requestId);
+    event Winner(address indexed _winner);
+
+    constructor(
+        address vrfCoordinatorV2,
+        uint64 subscriptionId,
+        bytes32 gasLane, // keyHash
+        uint32 callbackGasLimit,
+        uint32 _totalNFTs,
+        uint32 _voteDuration,
+        uint256 _minEth
+    ) VRFConsumerBaseV2(vrfCoordinatorV2) {
+        i_vrfCoordinator = VRFCoordinatorV2Interface(vrfCoordinatorV2);
+        i_gasLane = gasLane;
+        i_subscriptionId = subscriptionId;
+        i_callbackGasLimit = callbackGasLimit;
         lastVote = block.timestamp;
         i_totalNFTs = _totalNFTs;
         remainingNFTs = _totalNFTs;
@@ -59,10 +82,7 @@ contract NFTfight {
         voteDuration = _voteDuration;
     }
 
-    event NFTVotedOut(uint256 indexed _NFTid);
-    event NFTPurchased(uint256 indexed _NFTid, address indexed _buyer);
-
-    // Allows a user to purchase an NFT
+    // can send more ETH than min ETH!
     function purchaseNft() public payable {
         // Check if the user has sent the minimum amount of ETH
         if (msg.value < minEth) {
@@ -95,7 +115,6 @@ contract NFTfight {
         }
 
         // game cannot start until all NFTs have been minted
-        // !!! revisit design decision
         if (NFTid < i_totalNFTs) {
             revert InsufficientMints();
         }
@@ -113,21 +132,21 @@ contract NFTfight {
             // burn NFT that received the most votes - consider max heap if possible
             // !!! factor out into a "changing state function"
 
-            uint256 mostVoted;
-            uint256 mostVotes = 1;
-            uint256 tieIndex = 0;
-            uint256[] memory mostVotedTies = new uint256[](i_totalNFTs);
+            uint32 mostVoted;
+            uint32 mostVotes = 1;
+            uint32 tieIndex = 0;
+            uint32[] memory mostVotedTies = new uint32[](i_totalNFTs);
 
             // !!! change this to view function to save gas
 
             for (uint16 i = 0; i < survivingNFTs.length; i++) {
-                uint256 element = survivingNFTs[i];
+                uint32 element = survivingNFTs[i];
 
                 if (element == 0) {
                     break;
                 }
 
-                uint256 voteCount = voteTally[epoch][element];
+                uint32 voteCount = voteTally[epoch][element];
 
                 // !!! implement array resizing in Yul otherwise mostVotedTies will remain length of highest ties
                 if (voteCount > mostVotes) {
@@ -178,21 +197,64 @@ contract NFTfight {
             revert InsufficientMints();
         }
 
-        uint32[] memory winningNFT = new uint32[](2);
+        uint32 winningNFT;
+
+        uint32[] memory winningNFTs = new uint32[](2);
         uint8 counter = 0;
 
         for (uint256 i = 0; i < survivingNFTs.length; i++) {
             if (survivingNFTs[i] != 0) {
-                winningNFT[counter] = survivingNFTs[i];
+                winningNFTs[counter] = survivingNFTs[i];
                 counter = counter + 1;
             }
         }
 
-        // !!! decide some tie breaking mechanism for last 2 NFTs
+        uint256[] memory pricePaid = new uint256[](2);
+        for (uint256 i = 0; i < 2; i++) {
+            pricePaid[i] = purchasePrice[purchasedNFTs[winningNFTs[i]]];
+        }
 
-        address payable winner = payable(purchasedNFTs[winningNFT]);
+        // give NFT to whoever paid more initially
+        if (pricePaid[0] > pricePaid[1]) {
+            winningNFT = winningNFTs[0];
+            transferToWinner(purchasedNFTs[winningNFT]);
+        } else if (pricePaid[0] < pricePaid[1]) {
+            winningNFT = winningNFTs[1];
+            transferToWinner(purchasedNFTs[winningNFT]);
+        } else {
+            uint256 requestId = i_vrfCoordinator.requestRandomWords(
+                i_gasLane,
+                i_subscriptionId,
+                REQUEST_CONFIRMATIONS,
+                i_callbackGasLimit,
+                NUM_WORDS
+            );
 
-        winner.transfer(address(this).balance);
+            emit TieBreakerRequested(requestId);
+        }
+    }
+
+    function fulfillRandomWords(
+        uint256 /* requestId */,
+        uint256[] memory randomWords
+    ) internal override {
+        // !!! Any way to not have to redo this work?
+
+        uint32[] memory winningNFTs = new uint32[](2);
+        uint8 counter = 0;
+
+        for (uint256 i = 0; i < survivingNFTs.length; i++) {
+            if (survivingNFTs[i] != 0) {
+                winningNFTs[counter] = survivingNFTs[i];
+                counter = counter + 1;
+            }
+        }
+
+        uint256 indexOfWinner = randomWords[0] % 2;
+
+        address winnerAddress = purchasedNFTs[winningNFTs[indexOfWinner]];
+
+        transferToWinner(winnerAddress);
     }
 
     /* ======================== Helpers ======================== */
@@ -201,5 +263,12 @@ contract NFTfight {
         if (survivingNFTs[_NFTid] != 0) {
             return true;
         }
+    }
+
+    function transferToWinner(address _winner) public {
+        address payable winner = payable(_winner);
+        winner.transfer(address(this).balance);
+
+        emit Winner(winner);
     }
 }
