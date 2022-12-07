@@ -10,7 +10,8 @@ error purchaseNFT__SoldOut();
 error claimEth__GameNotOver();
 error vote__IneligibleToVote();
 error vote__NFTAlreadyVotedOut();
-error vote__InsufficientMints();
+error InsufficientMints();
+error claimETH__VoteIncomplete();
 
 contract NFTfight {
     // NFT Id
@@ -19,8 +20,14 @@ contract NFTfight {
     // epoch Counter
     uint32 public epoch;
 
-    // Total Number of NFTs currently available
-    uint32 public totalNFTs;
+    // Total number of NFTs
+    uint32 public immutable i_totalNFTs;
+
+    // Total number of remaining NFTs
+    uint32 public remainingNFTs;
+
+    // The duration of a vote, in seconds (1 day) max value 32 years
+    uint32 public voteDuration;
 
     // NFTid => purchaser Address
     mapping(uint256 => address) public purchasedNFTs;
@@ -29,7 +36,7 @@ contract NFTfight {
     mapping(address => uint256) public purchasePrice;
 
     // Keeps track of what NFTs are still existing
-    uint256[] survivingNFTs;
+    uint32[] survivingNFTs;
 
     // Epoch => (tokenid => vote)
     mapping(uint256 => mapping(uint256 => uint256)) voteTally;
@@ -43,13 +50,11 @@ contract NFTfight {
     // The minimum amount of ETH required to purchase an NFT
     uint256 public minEth;
 
-    // The duration of a vote, in seconds (1 day) max value 32 years
-    uint256 public voteDuration;
-
     // The constructor, which sets the owner of the contract
-    constructor(uint32 _totalNFTs, uint256 _voteDuration, uint256 _minEth) {
+    constructor(uint32 _totalNFTs, uint32 _voteDuration, uint256 _minEth) {
         lastVote = block.timestamp;
-        totalNFTs = _totalNFTs;
+        i_totalNFTs = _totalNFTs;
+        remainingNFTs = _totalNFTs;
         minEth = _minEth;
         voteDuration = _voteDuration;
     }
@@ -64,7 +69,7 @@ contract NFTfight {
             revert purchaseNFT__MintPriceNotMet();
         }
 
-        if (NFTid >= totalNFTs) {
+        if (NFTid >= i_totalNFTs) {
             revert purchaseNFT__SoldOut();
         }
 
@@ -91,8 +96,8 @@ contract NFTfight {
 
         // game cannot start until all NFTs have been minted
         // !!! revisit design decision
-        if (NFTid < totalNFTs) {
-            revert vote__InsufficientMints();
+        if (NFTid < i_totalNFTs) {
+            revert InsufficientMints();
         }
 
         // if you already have voted then you cannot vote
@@ -111,7 +116,7 @@ contract NFTfight {
             uint256 mostVoted;
             uint256 mostVotes = 1;
             uint256 tieIndex = 0;
-            uint256[] memory mostVotedTies = new uint256[](totalNFTs);
+            uint256[] memory mostVotedTies = new uint256[](i_totalNFTs);
 
             // !!! change this to view function to save gas
 
@@ -155,14 +160,39 @@ contract NFTfight {
             // Delete from surviving NFTs and Purchased NFTs the most voted NFT
             purchasedNFTs[mostVoted] = address(0);
             delete survivingNFTs[mostVoted];
-            totalNFTs = totalNFTs - 1;
+            remainingNFTs = remainingNFTs - 1;
             emit NFTVotedOut(mostVoted);
         }
 
         voteBool[epoch][msg.sender] = true;
 
-        // !!! have to check if the nftid they are voting for is valid
         voteTally[epoch][nftId] = voteTally[epoch][nftId] + 1;
+    }
+
+    function claimETH() public {
+        if (remainingNFTs > 2) {
+            revert claimETH__VoteIncomplete();
+        }
+
+        if (i_totalNFTs != NFTid) {
+            revert InsufficientMints();
+        }
+
+        uint32[] memory winningNFT = new uint32[](2);
+        uint8 counter = 0;
+
+        for (uint256 i = 0; i < survivingNFTs.length; i++) {
+            if (survivingNFTs[i] != 0) {
+                winningNFT[counter] = survivingNFTs[i];
+                counter = counter + 1;
+            }
+        }
+
+        // !!! decide some tie breaking mechanism for last 2 NFTs
+
+        address payable winner = payable(purchasedNFTs[winningNFT]);
+
+        winner.transfer(address(this).balance);
     }
 
     /* ======================== Helpers ======================== */
