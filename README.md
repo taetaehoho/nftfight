@@ -1,3 +1,5 @@
+Generated using ChatGPT.
+
 The contract is a game that allows users to purchase non-fungible tokens (NFTs) using a minimum amount of 0.05 ETH, and then participate in a weekly vote to determine which NFT to "burn". The NFT that is left standing at the end of the game gets to claim all the ETH collected from the NFT purchases.
 
 The contract uses the Counters library from OpenZeppelin to maintain a counter for the NFT ID and another counter for the epoch. It tracks the total number of NFTs available, maps each NFT to the address of its owner, maintains an array of surviving NFTs, and uses nested mappings to keep track of the votes per epoch per NFT. The contract also tracks the total ETH collected, the timestamp of the last vote, the address of the last NFT that was burned, and the minimum amount of ETH required to purchase an NFT.
