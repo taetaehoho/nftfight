@@ -22,7 +22,7 @@ contract NFTfight is VRFConsumerBaseV2 {
     uint32 private constant NUM_WORDS = 1;
 
     // NFTid incremented per purchase
-    uint32 public NFTid = 0;
+    uint32 public NFTid;
 
     // Epoch incremented per vote epoch
     uint32 public epoch;
@@ -133,12 +133,12 @@ contract NFTfight is VRFConsumerBaseV2 {
 
             uint32 mostVoted;
             uint32 mostVotes = 1;
-            uint32 tieIndex = 0;
+            uint32 tieIndex;
             uint32[] memory mostVotedTies = new uint32[](i_totalNFTs);
 
             // !!! change this to view function to save gas
 
-            for (uint16 i = 0; i < survivingNFTs.length; i++) {
+            for (uint16 i; i < survivingNFTs.length; i++) {
                 uint32 element = survivingNFTs[i];
 
                 if (element == 0) {
@@ -147,11 +147,18 @@ contract NFTfight is VRFConsumerBaseV2 {
 
                 uint32 voteCount = voteTally[epoch][element];
 
-                // !!! implement array resizing in Yul otherwise mostVotedTies will remain length of highest ties
                 if (voteCount > mostVotes) {
                     mostVoted = element;
                     mostVotes = voteCount;
-                    delete mostVotedTies;
+
+                    // !!! Autocrat does this work?
+                    uint256 arrLength = mostVotedTies.length;
+                    assembly {
+                        mstore(
+                            mostVotedTies,
+                            sub(mload(mostVotedTies), arrLength)
+                        )
+                    }
                     tieIndex = 0;
                 } else if (voteCount == mostVotes) {
                     mostVotedTies[tieIndex] = element;
@@ -162,13 +169,13 @@ contract NFTfight is VRFConsumerBaseV2 {
             uint256[] memory tieLength = new uint256[](mostVotedTies.length);
 
             // !!! does this work or is the array init at totalNFTs
-            for (uint16 i = 0; i < mostVotedTies.length; i++) {
+            for (uint16 i; i < mostVotedTies.length; i++) {
                 tieLength[i] = purchasePrice[purchasedNFTs[mostVotedTies[i]]];
             }
 
             uint256 minVal = type(uint256).max;
 
-            for (uint16 i = 0; i < tieLength.length; i++) {
+            for (uint16 i; i < tieLength.length; i++) {
                 if (tieLength[i] < minVal) {
                     minVal = tieLength[i];
                     mostVoted = mostVotedTies[i];
@@ -201,7 +208,7 @@ contract NFTfight is VRFConsumerBaseV2 {
         uint32[] memory winningNFTs = constructWinningArr();
 
         uint256[] memory pricePaid = new uint256[](2);
-        for (uint256 i = 0; i < 2; i++) {
+        for (uint256 i; i < 2; i++) {
             pricePaid[i] = purchasePrice[purchasedNFTs[winningNFTs[i]]];
         }
 
@@ -254,9 +261,9 @@ contract NFTfight is VRFConsumerBaseV2 {
         returns (uint32[] memory _winningNFTs)
     {
         uint32[] memory winningNFTs = new uint32[](2);
-        uint8 counter = 0;
+        uint8 counter;
 
-        for (uint256 i = 0; i < survivingNFTs.length; i++) {
+        for (uint256 i; i < survivingNFTs.length; i++) {
             if (survivingNFTs[i] != 0) {
                 winningNFTs[counter] = survivingNFTs[i];
                 counter = counter + 1;
