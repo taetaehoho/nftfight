@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.7;
 
+/// review: the benefit of declaring things (errors, structs, etc) outside of the contract is so
+///         they're easily importable in other contracts. curious about your reasoning for doing it here
+
 error purchaseNFT__MintPriceNotMet();
 error purchaseNFT__SoldOut();
 error claimEth__GameNotOver();
@@ -12,6 +15,8 @@ error claimETH__VoteIncomplete();
 import "chainlink/v0.8/VRFConsumerBaseV2.sol";
 import "chainlink/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 
+
+/// review: where is the NFT contract?
 contract NFTfight is VRFConsumerBaseV2 {
     // VRF parameters
     VRFCoordinatorV2Interface private immutable i_vrfCoordinator;
@@ -93,12 +98,23 @@ contract NFTfight is VRFConsumerBaseV2 {
             revert purchaseNFT__SoldOut();
         }
 
+        // review: do you want only 1 NFT minted per wallet?
+        //         if not: then keep in mind 'purchasePrice[msg.sender] = msg.value;' would overwrite
+        //         the previous purchase. 
+        //         if so: you proobably want to revert if they already own / have minted an NFT
+        //
+        //         this also brings up another question of how you want to handle transfers
+        //         e.g. should the nft be non transferable until the fight is won?
+        //         if you want to keep transferablity pre-win, then the below variables should be accounted for on
+        //         transfer
         purchasedNFTs[NFTid] = msg.sender;
         survivingNFTs.push(NFTid);
         purchasePrice[msg.sender] = msg.value;
 
         emit NFTPurchased(NFTid, msg.sender);
 
+        // review: you're starting with id 0 here while counting survivingNFTs[id] == 0 as a non-surviving NFT
+        //         meaning the first minter would have a dead NFT as soon as they mint
         NFTid = NFTid + 1;
     }
 
@@ -124,6 +140,12 @@ contract NFTfight is VRFConsumerBaseV2 {
             revert vote__IneligibleToVote();
         }
 
+        // review: if everyone voted, and then the vote duration passed, this logic would be unreachable
+        //         since any calls to this function would revert before getting here
+        //
+        // note:   it might make sense to have this logic be its own function called e.g. finalizeVote, 
+        //         and for this vote function to either revert if the duratoin has passed for the epoch + finalizeVote
+        //         hasn't been called OR to call finalizeVote in that case
         // count votes and kick one nft out if its been longer than vote duration
         if (block.timestamp - lastVote >= voteDuration) {
             epoch = epoch + 1;
@@ -136,11 +158,13 @@ contract NFTfight is VRFConsumerBaseV2 {
             uint32 tieIndex;
             uint32[] memory mostVotedTies = new uint32[](i_totalNFTs);
 
+            // review: view functions only save gas when they're not called within write functions
             // !!! change this to view function to save gas
 
             for (uint16 i; i < survivingNFTs.length; i++) {
                 uint32 element = survivingNFTs[i];
 
+                // review: first id is 0 so this breaks immediately
                 if (element == 0) {
                     break;
                 }
@@ -151,6 +175,8 @@ contract NFTfight is VRFConsumerBaseV2 {
                     mostVoted = element;
                     mostVotes = voteCount;
 
+                    // review: you're deleting the entire array by doing this 
+                    // note: see test/Tester.t.sol
                     // !!! Autocrat does this work?
                     uint256 arrLength = mostVotedTies.length;
                     assembly {
@@ -272,7 +298,9 @@ contract NFTfight is VRFConsumerBaseV2 {
 
         return winningNFTs;
     }
+    
 
+    /// review: this definitely should not be public
     function transferToWinner(address _winner) public {
         address payable winner = payable(_winner);
         winner.transfer(address(this).balance);
