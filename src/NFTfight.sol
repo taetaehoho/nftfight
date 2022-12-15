@@ -1,23 +1,30 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.7;
 
-/// review: the benefit of declaring things (errors, structs, etc) outside of the contract is so
-///         they're easily importable in other contracts. curious about your reasoning for doing it here
-
-error purchaseNFT__MintPriceNotMet();
-error purchaseNFT__SoldOut();
-error claimEth__GameNotOver();
-error vote__IneligibleToVote();
-error vote__NFTAlreadyVotedOut();
-error InsufficientMints();
-error claimETH__VoteIncomplete();
-
 import "chainlink/v0.8/VRFConsumerBaseV2.sol";
 import "chainlink/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 
 /// review: where is the NFT contract?
 contract NFTfight is VRFConsumerBaseV2 {
+    /* ======================== Errors/Events ======================== */
+
+    error purchaseNFT__MintPriceNotMet();
+    error purchaseNFT__SoldOut();
+    error claimEth__GameNotOver();
+    error vote__IneligibleToVote();
+    error vote__NFTAlreadyVotedOut();
+    error InsufficientMints();
+    error claimETH__VoteIncomplete();
+
+    event NFTVotedOut(uint256 indexed _NFTid);
+    event NFTPurchased(uint256 indexed _NFTid, address indexed _buyer);
+    event TieBreakerRequested(uint256 indexed requestId);
+    event Winner(address indexed _winner);
+
+    /* ======================== State Vars ======================== */
+
     // VRF parameters
+
     VRFCoordinatorV2Interface private immutable i_vrfCoordinator;
     uint64 private immutable i_subscriptionId;
     bytes32 private immutable i_gasLane;
@@ -26,7 +33,7 @@ contract NFTfight is VRFConsumerBaseV2 {
     uint32 private constant NUM_WORDS = 1;
 
     // NFTid incremented per purchase
-    uint32 public NFTid;
+    uint32 public NFTid = 1;
 
     // Epoch incremented per vote epoch
     uint32 public epoch;
@@ -64,10 +71,7 @@ contract NFTfight is VRFConsumerBaseV2 {
     // owner
     address constant owner = 0x22916ca71C982A519F6475C2bC760C2b0222903C;
 
-    event NFTVotedOut(uint256 indexed _NFTid);
-    event NFTPurchased(uint256 indexed _NFTid, address indexed _buyer);
-    event TieBreakerRequested(uint256 indexed requestId);
-    event Winner(address indexed _winner);
+    /* ======================== Contract ======================== */
 
     constructor(
         address vrfCoordinatorV2,
@@ -117,8 +121,6 @@ contract NFTfight is VRFConsumerBaseV2 {
 
         emit NFTPurchased(NFTid, msg.sender);
 
-        // review: you're starting with id 0 here while counting survivingNFTs[id] == 0 as a non-surviving NFT
-        //         meaning the first minter would have a dead NFT as soon as they mint
         NFTid = NFTid + 1;
     }
 
@@ -168,7 +170,6 @@ contract NFTfight is VRFConsumerBaseV2 {
             for (uint16 i; i < survivingNFTs.length; i++) {
                 uint32 element = survivingNFTs[i];
 
-                // review: first id is 0 so this breaks immediately
                 if (element == 0) {
                     break;
                 }
@@ -223,6 +224,8 @@ contract NFTfight is VRFConsumerBaseV2 {
 
         voteTally[epoch][nftId] = voteTally[epoch][nftId] + 1;
     }
+
+    function finalizeVote() private {}
 
     function claimETH() public {
         if (remainingNFTs > 2) {
@@ -303,8 +306,7 @@ contract NFTfight is VRFConsumerBaseV2 {
         return winningNFTs;
     }
 
-    /// review: this definitely should not be public
-    function transferToWinner(address _winner) public {
+    function transferToWinner(address _winner) private {
         address payable winner = payable(_winner);
         winner.transfer(address(this).balance);
 
