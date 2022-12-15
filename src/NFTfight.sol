@@ -47,6 +47,9 @@ contract NFTfight is VRFConsumerBaseV2 {
     // The duration of a vote, in seconds
     uint32 public voteDuration;
 
+    // total votes casted this epoch
+    uint32 public totalVotesEpoch;
+
     // NFTid => purchaser Address
     mapping(uint32 => address) public purchasedNFTs;
 
@@ -141,14 +144,18 @@ contract NFTfight is VRFConsumerBaseV2 {
             revert InsufficientMints();
         }
 
-        // !!! what if everyone voted but epoch hasn't passed!
-
         // if you already have voted then you cannot vote
         if (voteBool[epoch][msg.sender] == true) {
             revert vote__IneligibleToVote();
         }
 
-        if (block.timestamp - lastVote >= voteDuration) {
+        totalVotesEpoch = totalVotesEpoch + 1;
+
+        // if the last non-voting person has voted OR if epoch has passed
+        if (
+            totalVotesEpoch == remainingNFTs ||
+            block.timestamp - lastVote >= voteDuration
+        ) {
             finalizeVote();
         }
 
@@ -223,6 +230,7 @@ contract NFTfight is VRFConsumerBaseV2 {
         purchasedNFTs[mostVoted] = address(0);
         delete survivingNFTs[mostVoted];
         remainingNFTs = remainingNFTs - 1;
+        totalVotesEpoch = 0;
         emit NFTVotedOut(mostVoted);
     }
 
