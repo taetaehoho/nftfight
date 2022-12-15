@@ -3,9 +3,10 @@ pragma solidity ^0.8.7;
 
 import "chainlink/v0.8/VRFConsumerBaseV2.sol";
 import "chainlink/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
+import "solmate/ERC721.sol";
 
-/// review: where is the NFT contract?
-contract NFTfight is VRFConsumerBaseV2 {
+/// technically not an NFT
+contract NFTfight is VRFConsumerBaseV2, ERC721 {
     /* ======================== Errors/Events ======================== */
 
     error purchaseNFT__MintPriceNotMet();
@@ -84,7 +85,7 @@ contract NFTfight is VRFConsumerBaseV2 {
         uint32 _totalNFTs,
         uint32 _voteDuration,
         uint256 _minEth
-    ) VRFConsumerBaseV2(vrfCoordinatorV2) {
+    ) VRFConsumerBaseV2(vrfCoordinatorV2) ERC721("NFTFight", "NFTF") {
         i_vrfCoordinator = VRFCoordinatorV2Interface(vrfCoordinatorV2);
         i_gasLane = gasLane;
         i_subscriptionId = subscriptionId;
