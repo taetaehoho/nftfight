@@ -97,6 +97,7 @@ contract NFTfight is VRFConsumerBaseV2, ERC721 {
         voteDuration = _voteDuration;
     }
 
+    // !!! Change to ERC721
     // can send more ETH than min ETH
     function purchaseNft() public payable {
         // Check if the user has sent the minimum amount of ETH
