@@ -141,83 +141,15 @@ contract NFTfight is VRFConsumerBaseV2 {
             revert InsufficientMints();
         }
 
+        // what if everyone voted but epoch hasn't passed!
+
         // if you already have voted then you cannot vote
         if (voteBool[epoch][msg.sender] == true) {
             revert vote__IneligibleToVote();
         }
 
-        // review: if everyone voted, and then the vote duration passed, this logic would be unreachable
-        //         since any calls to this function would revert before getting here
-        //
-        // note:   it might make sense to have this logic be its own function called e.g. finalizeVote,
-        //         and for this vote function to either revert if the duratoin has passed for the epoch + finalizeVote
-        //         hasn't been called OR to call finalizeVote in that case
-        // count votes and kick one nft out if its been longer than vote duration
         if (block.timestamp - lastVote >= voteDuration) {
-            epoch = epoch + 1;
-            lastVote = block.timestamp;
-
-            // burn NFT that received the most votes - consider max heap if possible
-
-            uint32 mostVoted;
-            uint32 mostVotes = 1;
-            uint32 tieIndex;
-            uint32[] memory mostVotedTies = new uint32[](i_totalNFTs);
-
-            // review: view functions only save gas when they're not called within write functions
-            // !!! change this to view function to save gas
-
-            for (uint16 i; i < survivingNFTs.length; i++) {
-                uint32 element = survivingNFTs[i];
-
-                if (element == 0) {
-                    break;
-                }
-
-                uint32 voteCount = voteTally[epoch][element];
-
-                if (voteCount > mostVotes) {
-                    mostVoted = element;
-                    mostVotes = voteCount;
-
-                    // review: you're deleting the entire array by doing this
-                    // note: see test/Tester.t.sol
-                    // !!! Autocrat does this work?
-                    uint256 arrLength = mostVotedTies.length;
-                    assembly {
-                        mstore(
-                            mostVotedTies,
-                            sub(mload(mostVotedTies), arrLength)
-                        )
-                    }
-                    tieIndex = 0;
-                } else if (voteCount == mostVotes) {
-                    mostVotedTies[tieIndex] = element;
-                    tieIndex = tieIndex + 1;
-                }
-            }
-
-            uint256[] memory tieLength = new uint256[](mostVotedTies.length);
-
-            // !!! does this work or is the array init at totalNFTs
-            for (uint16 i; i < mostVotedTies.length; i++) {
-                tieLength[i] = purchasePrice[purchasedNFTs[mostVotedTies[i]]];
-            }
-
-            uint256 minVal = type(uint256).max;
-
-            for (uint16 i; i < tieLength.length; i++) {
-                if (tieLength[i] < minVal) {
-                    minVal = tieLength[i];
-                    mostVoted = mostVotedTies[i];
-                }
-            }
-
-            // Delete from surviving NFTs and Purchased NFTs the most voted NFT
-            purchasedNFTs[mostVoted] = address(0);
-            delete survivingNFTs[mostVoted];
-            remainingNFTs = remainingNFTs - 1;
-            emit NFTVotedOut(mostVoted);
+            finalizeVote();
         }
 
         voteBool[epoch][msg.sender] = true;
@@ -225,7 +157,78 @@ contract NFTfight is VRFConsumerBaseV2 {
         voteTally[epoch][nftId] = voteTally[epoch][nftId] + 1;
     }
 
-    function finalizeVote() private {}
+    function finalizeVote() private {
+        epoch = epoch + 1;
+        lastVote = block.timestamp;
+
+        // burn NFT that received the most votes - consider max heap if possible
+
+        uint32 mostVoted;
+        uint32 mostVotes = 1;
+        uint32 tieIndex;
+        uint32[] memory mostVotedTies = new uint32[](i_totalNFTs);
+
+        // review: view functions only save gas when they're not called within write functions
+        // !!! change this to view function to save gas
+
+        for (uint16 i; i < survivingNFTs.length; ) {
+            uint32 element = survivingNFTs[i];
+
+            if (element == 0) {
+                break;
+            }
+
+            uint32 voteCount = voteTally[epoch][element];
+
+            if (voteCount > mostVotes) {
+                mostVoted = element;
+                mostVotes = voteCount;
+
+                // review: you're deleting the entire array by doing this
+                // note: see test/Tester.t.sol
+                // !!! Autocrat does this work?
+                uint256 arrLength = mostVotedTies.length;
+                assembly {
+                    mstore(mostVotedTies, sub(mload(mostVotedTies), arrLength))
+                }
+                tieIndex = 0;
+            } else if (voteCount == mostVotes) {
+                mostVotedTies[tieIndex] = element;
+                tieIndex = tieIndex + 1;
+            }
+            unchecked {
+                ++i;
+            }
+        }
+
+        uint256[] memory tieLength = new uint256[](mostVotedTies.length);
+
+        // !!! does this work or is the array init at totalNFTs
+        for (uint16 i; i < mostVotedTies.length; ) {
+            tieLength[i] = purchasePrice[purchasedNFTs[mostVotedTies[i]]];
+            unchecked {
+                ++i;
+            }
+        }
+
+        uint256 minVal = type(uint256).max;
+
+        for (uint16 i; i < tieLength.length; ) {
+            if (tieLength[i] < minVal) {
+                minVal = tieLength[i];
+                mostVoted = mostVotedTies[i];
+            }
+            unchecked {
+                ++i;
+            }
+        }
+
+        // Delete from surviving NFTs and Purchased NFTs the most voted NFT
+        purchasedNFTs[mostVoted] = address(0);
+        delete survivingNFTs[mostVoted];
+        remainingNFTs = remainingNFTs - 1;
+        emit NFTVotedOut(mostVoted);
+    }
 
     function claimETH() public {
         if (remainingNFTs > 2) {
@@ -241,8 +244,11 @@ contract NFTfight is VRFConsumerBaseV2 {
         uint32[] memory winningNFTs = constructWinningArr();
 
         uint256[] memory pricePaid = new uint256[](2);
-        for (uint256 i; i < 2; i++) {
+        for (uint256 i; i < 2; ) {
             pricePaid[i] = purchasePrice[purchasedNFTs[winningNFTs[i]]];
+            unchecked {
+                ++i;
+            }
         }
 
         // give NFT to whoever paid more initially
@@ -269,8 +275,6 @@ contract NFTfight is VRFConsumerBaseV2 {
         uint256 /* requestId */,
         uint256[] memory randomWords
     ) internal override {
-        // !!! Any way to not have to redo this work while still using memory array?
-
         uint32[] memory winningNFTs = constructWinningArr();
 
         uint256 indexOfWinner = randomWords[0] % 2;
@@ -296,10 +300,14 @@ contract NFTfight is VRFConsumerBaseV2 {
         uint32[] memory winningNFTs = new uint32[](2);
         uint8 counter;
 
-        for (uint256 i; i < survivingNFTs.length; i++) {
+        for (uint256 i; i < survivingNFTs.length; ) {
             if (survivingNFTs[i] != 0) {
                 winningNFTs[counter] = survivingNFTs[i];
                 counter = counter + 1;
+            }
+
+            unchecked {
+                ++i;
             }
         }
 
