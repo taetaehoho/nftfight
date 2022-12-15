@@ -141,7 +141,7 @@ contract NFTfight is VRFConsumerBaseV2 {
             revert InsufficientMints();
         }
 
-        // what if everyone voted but epoch hasn't passed!
+        // !!! what if everyone voted but epoch hasn't passed!
 
         // if you already have voted then you cannot vote
         if (voteBool[epoch][msg.sender] == true) {
@@ -167,9 +167,6 @@ contract NFTfight is VRFConsumerBaseV2 {
         uint32 mostVotes = 1;
         uint32 tieIndex;
         uint32[] memory mostVotedTies = new uint32[](i_totalNFTs);
-
-        // review: view functions only save gas when they're not called within write functions
-        // !!! change this to view function to save gas
 
         for (uint16 i; i < survivingNFTs.length; ) {
             uint32 element = survivingNFTs[i];
@@ -203,7 +200,6 @@ contract NFTfight is VRFConsumerBaseV2 {
 
         uint256[] memory tieLength = new uint256[](mostVotedTies.length);
 
-        // !!! does this work or is the array init at totalNFTs
         for (uint16 i; i < mostVotedTies.length; ) {
             tieLength[i] = purchasePrice[purchasedNFTs[mostVotedTies[i]]];
             unchecked {
