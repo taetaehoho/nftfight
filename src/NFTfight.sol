@@ -5,6 +5,8 @@ import "chainlink/v0.8/VRFConsumerBaseV2.sol";
 import "chainlink/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 import "solmate/ERC721.sol";
 
+// !!! change all survivingNFT logic to fit index
+
 /// technically not an NFT
 contract NFTfight is VRFConsumerBaseV2, ERC721 {
     /* ======================== Errors/Events ======================== */
@@ -51,11 +53,8 @@ contract NFTfight is VRFConsumerBaseV2, ERC721 {
     // total votes casted this epoch
     uint32 public totalVotesEpoch;
 
-    // NFTid => purchaser Address
-    mapping(uint32 => address) public purchasedNFTs;
-
-    // purchaser Address => purchase Price
-    mapping(address => uint256) public purchasePrice;
+    //nft purchase price tracker
+    mapping(uint32 => uint256) public purchasedPrice;
 
     // Keeps track of what NFTs are still surviving
     uint32[] survivingNFTs;
@@ -74,8 +73,6 @@ contract NFTfight is VRFConsumerBaseV2, ERC721 {
 
     // owner
     address constant owner = 0x22916ca71C982A519F6475C2bC760C2b0222903C;
-
-    /* ======================== Contract ======================== */
 
     constructor(
         address vrfCoordinatorV2,
@@ -97,6 +94,14 @@ contract NFTfight is VRFConsumerBaseV2, ERC721 {
         voteDuration = _voteDuration;
     }
 
+    /* ======================== ERC721 ======================== */
+
+    function tokenURI(uint256 id) public pure override returns (string memory) {
+        return "hoing";
+    }
+
+    /* ======================== Contract ======================== */
+
     // !!! Change to ERC721
     // can send more ETH than min ETH
     function purchaseNft() public payable {
@@ -105,7 +110,7 @@ contract NFTfight is VRFConsumerBaseV2, ERC721 {
             revert purchaseNFT__MintPriceNotMet();
         }
 
-        if (NFTid >= i_totalNFTs) {
+        if (NFTid > i_totalNFTs) {
             revert purchaseNFT__SoldOut();
         }
 
@@ -120,9 +125,9 @@ contract NFTfight is VRFConsumerBaseV2, ERC721 {
         //         e.g. should the nft be non transferable until the fight is won?
         //         if you want to keep transferablity pre-win, then the below variables should be accounted for on
         //         transfer
-        purchasedNFTs[NFTid] = msg.sender;
+        _safeMint(msg.sender, NFTid);
         survivingNFTs.push(NFTid);
-        purchasePrice[msg.sender] = msg.value;
+        purchasedPrice[NFTid] = msg.value;
 
         emit NFTPurchased(NFTid, msg.sender);
 
@@ -132,12 +137,12 @@ contract NFTfight is VRFConsumerBaseV2, ERC721 {
     // Allows a user to vote on which NFT to burn
     function vote(uint16 nftId, uint16 yournftId) public {
         // if you do not have an NFT, have already been voted out then you cannot vote
-        if (purchasedNFTs[yournftId] != msg.sender) {
+        if (_ownerOf[yournftId] != msg.sender) {
             revert vote__IneligibleToVote();
         }
 
         // you cannot vote for an NFT that is already out!
-        if (survivingNFTs[nftId] == 0) {
+        if (survivingNFTs[nftId - 1] == 0) {
             revert vote__NFTAlreadyVotedOut();
         }
 
@@ -210,7 +215,7 @@ contract NFTfight is VRFConsumerBaseV2, ERC721 {
         uint256[] memory tieLength = new uint256[](mostVotedTies.length);
 
         for (uint16 i; i < mostVotedTies.length; ) {
-            tieLength[i] = purchasePrice[purchasedNFTs[mostVotedTies[i]]];
+            tieLength[i] = purchasedPrice[mostVotedTies[i]];
             unchecked {
                 ++i;
             }
@@ -229,8 +234,10 @@ contract NFTfight is VRFConsumerBaseV2, ERC721 {
         }
 
         // Delete from surviving NFTs and Purchased NFTs the most voted NFT
-        purchasedNFTs[mostVoted] = address(0);
-        delete survivingNFTs[mostVoted];
+        _ownerOf[mostVoted] = address(0);
+
+        // have to change this as now nftid starts with 1 and index is moved
+        delete survivingNFTs[mostVoted - 1];
         remainingNFTs = remainingNFTs - 1;
         totalVotesEpoch = 0;
         emit NFTVotedOut(mostVoted);
@@ -251,7 +258,7 @@ contract NFTfight is VRFConsumerBaseV2, ERC721 {
 
         uint256[] memory pricePaid = new uint256[](2);
         for (uint256 i; i < 2; ) {
-            pricePaid[i] = purchasePrice[purchasedNFTs[winningNFTs[i]]];
+            pricePaid[i] = purchasedPrice[winningNFTs[i]];
             unchecked {
                 ++i;
             }
@@ -260,10 +267,10 @@ contract NFTfight is VRFConsumerBaseV2, ERC721 {
         // give NFT to whoever paid more initially
         if (pricePaid[0] > pricePaid[1]) {
             winningNFT = winningNFTs[0];
-            transferToWinner(purchasedNFTs[winningNFT]);
+            transferToWinner(_ownerOf[winningNFT]);
         } else if (pricePaid[0] < pricePaid[1]) {
             winningNFT = winningNFTs[1];
-            transferToWinner(purchasedNFTs[winningNFT]);
+            transferToWinner(_ownerOf[winningNFT]);
         } else {
             uint256 requestId = i_vrfCoordinator.requestRandomWords(
                 i_gasLane,
@@ -285,7 +292,7 @@ contract NFTfight is VRFConsumerBaseV2, ERC721 {
 
         uint256 indexOfWinner = randomWords[0] % 2;
 
-        address winnerAddress = purchasedNFTs[winningNFTs[indexOfWinner]];
+        address winnerAddress = _ownerOf[winningNFTs[indexOfWinner]];
 
         transferToWinner(winnerAddress);
     }
@@ -293,7 +300,7 @@ contract NFTfight is VRFConsumerBaseV2, ERC721 {
     /* ======================== Helpers ======================== */
 
     function getSurviving(uint256 _NFTid) public view returns (bool surviving) {
-        if (survivingNFTs[_NFTid] != 0) {
+        if (survivingNFTs[_NFTid - 1] != 0) {
             return true;
         }
     }

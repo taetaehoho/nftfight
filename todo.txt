@@ -1,4 +1,2 @@
-1. gas optimize via storage packing 
-2. review autocrat comments 
-3. implement erc721 
-4. write unit tests
+1. implement erc721 
+2. write unit tests
