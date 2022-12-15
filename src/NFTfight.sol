@@ -15,7 +15,6 @@ error claimETH__VoteIncomplete();
 import "chainlink/v0.8/VRFConsumerBaseV2.sol";
 import "chainlink/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 
-
 /// review: where is the NFT contract?
 contract NFTfight is VRFConsumerBaseV2 {
     // VRF parameters
@@ -62,6 +61,9 @@ contract NFTfight is VRFConsumerBaseV2 {
     // The minimum amount of ETH required to purchase an NFT
     uint256 public minEth;
 
+    // owner
+    address constant owner = 0x22916ca71C982A519F6475C2bC760C2b0222903C;
+
     event NFTVotedOut(uint256 indexed _NFTid);
     event NFTPurchased(uint256 indexed _NFTid, address indexed _buyer);
     event TieBreakerRequested(uint256 indexed requestId);
@@ -87,7 +89,7 @@ contract NFTfight is VRFConsumerBaseV2 {
         voteDuration = _voteDuration;
     }
 
-    // can send more ETH than min ETH!
+    // can send more ETH than min ETH
     function purchaseNft() public payable {
         // Check if the user has sent the minimum amount of ETH
         if (msg.value < minEth) {
@@ -98,9 +100,11 @@ contract NFTfight is VRFConsumerBaseV2 {
             revert purchaseNFT__SoldOut();
         }
 
+        // !!! consideration for if implementing transfers! (original purpose was to allow people to pay more to overwrite
+        // their initial purchase price.)
         // review: do you want only 1 NFT minted per wallet?
         //         if not: then keep in mind 'purchasePrice[msg.sender] = msg.value;' would overwrite
-        //         the previous purchase. 
+        //         the previous purchase.
         //         if so: you proobably want to revert if they already own / have minted an NFT
         //
         //         this also brings up another question of how you want to handle transfers
@@ -143,7 +147,7 @@ contract NFTfight is VRFConsumerBaseV2 {
         // review: if everyone voted, and then the vote duration passed, this logic would be unreachable
         //         since any calls to this function would revert before getting here
         //
-        // note:   it might make sense to have this logic be its own function called e.g. finalizeVote, 
+        // note:   it might make sense to have this logic be its own function called e.g. finalizeVote,
         //         and for this vote function to either revert if the duratoin has passed for the epoch + finalizeVote
         //         hasn't been called OR to call finalizeVote in that case
         // count votes and kick one nft out if its been longer than vote duration
@@ -175,7 +179,7 @@ contract NFTfight is VRFConsumerBaseV2 {
                     mostVoted = element;
                     mostVotes = voteCount;
 
-                    // review: you're deleting the entire array by doing this 
+                    // review: you're deleting the entire array by doing this
                     // note: see test/Tester.t.sol
                     // !!! Autocrat does this work?
                     uint256 arrLength = mostVotedTies.length;
@@ -298,7 +302,6 @@ contract NFTfight is VRFConsumerBaseV2 {
 
         return winningNFTs;
     }
-    
 
     /// review: this definitely should not be public
     function transferToWinner(address _winner) public {

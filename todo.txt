@@ -1,7 +1,4 @@
-1. add foundry testings
-2. see gas differences between uint16 for indiv vars and uint256
-3. Tie breaking for votes with ties 
-    a. use Chainlink VRF to decide among remaining 
-4. address voting when final 2 NFTs are left
-    a. use Chainlink VRF to decide who wins 
-    b. whoever sent more initial ETH wins
+1. gas optimize via storage packing 
+2. review autocrat comments 
+3. implement erc721 
+4. write unit tests
