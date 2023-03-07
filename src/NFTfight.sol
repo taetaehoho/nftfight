@@ -5,8 +5,6 @@ import "chainlink/v0.8/VRFConsumerBaseV2.sol";
 import "chainlink/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 import "solmate/ERC721.sol";
 
-// !!! change all survivingNFT logic to fit index
-
 /// technically not an NFT
 contract NFTfight is VRFConsumerBaseV2, ERC721 {
     /* ======================== Errors/Events ======================== */
@@ -27,7 +25,6 @@ contract NFTfight is VRFConsumerBaseV2, ERC721 {
     /* ======================== State Vars ======================== */
 
     // VRF parameters
-
     VRFCoordinatorV2Interface private immutable i_vrfCoordinator;
     uint64 private immutable i_subscriptionId;
     bytes32 private immutable i_gasLane;
@@ -197,7 +194,6 @@ contract NFTfight is VRFConsumerBaseV2, ERC721 {
 
                 // review: you're deleting the entire array by doing this
                 // note: see test/Tester.t.sol
-                // !!! Autocrat does this work?
                 uint256 arrLength = mostVotedTies.length;
                 assembly {
                     mstore(mostVotedTies, sub(mload(mostVotedTies), arrLength))
